@@ -11,14 +11,7 @@
 #
 name: "CodeQL"
 
-on:
-  push:
-    branches: [ main, v5 ]
-  pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ main ]
-  schedule:
-    - cron: '34 7 * * 6'
+on: workflow_dispatch
 
 permissions:
   contents: read
@@ -31,6 +24,7 @@ jobs:
       security-events: write  # for github/codeql-action/autobuild to send a status report
     name: Analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false

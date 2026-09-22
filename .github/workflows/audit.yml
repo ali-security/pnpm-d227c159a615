@@ -1,6 +1,6 @@
 name: Audit
 
-on: [push, pull_request]
+on: workflow_dispatch
 
 permissions:
   contents: read # to fetch code (actions/checkout)
@@ -9,6 +9,7 @@ jobs:
   audit:
     name: Audit dependencies
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout Commit

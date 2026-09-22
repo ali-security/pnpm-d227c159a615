@@ -1,0 +1,118 @@
+name: CI (parallel)
+
+# Like CI, but instead of running every package's test suite serially on one
+# runner, this fans out: one GitHub runner per workspace package. A `discover`
+# job builds the matrix (all packages that have a `_test` script) and the
+# `test` job runs each package's suite on its own runner, in parallel.
+#
+# The matrix carries a `windows-latest` leg alongside `ubuntu-latest` so that
+# every package's suite also runs on Windows: pnpm is a cross-platform CLI and
+# the sealed build has to satisfy required Windows OS coverage, which the Linux
+# legs alone cannot provide.
+#
+# Trigger manually from the Actions tab (workflow_dispatch).
+
+on:
+  workflow_dispatch:
+    inputs:
+      node-version:
+        description: "Node.js version to test on"
+        required: false
+        default: "22.12.0"
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      packages: ${{ steps.list.outputs.packages }}
+      count: ${{ steps.list.outputs.count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Build package matrix (packages with a _test script)
+        id: list
+        run: |
+          set -euo pipefail
+          packages=$(git ls-files | grep -E '(^|/)package\.json$' | node -e '
+            const fs = require("fs")
+            let s = ""
+            process.stdin.on("data", d => s += d).on("end", () => {
+              const files = s.split("\n").filter(Boolean)
+              const names = new Set()
+              for (const f of files) {
+                if (f.includes("node_modules")) continue
+                try {
+                  const pj = JSON.parse(fs.readFileSync(f, "utf8"))
+                  if (pj.name && pj.scripts && pj.scripts._test) names.add(pj.name)
+                } catch {}
+              }
+              process.stdout.write(JSON.stringify([...names].sort()))
+            })
+          ')
+          count=$(node -e "process.stdout.write(String(JSON.parse(process.argv[1]).length))" "$packages")
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Discovered $count packages with a _test script"
+
+  test:
+    needs: discover
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      # GitHub caps a matrix at 256 jobs; 125 packages x 2 OSes = 250 jobs,
+      # which is under that cap.
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        package: ${{ fromJson(needs.discover.outputs.packages) }}
+    name: ${{ matrix.os }} / ${{ matrix.package }}
+    steps:
+      - name: Configure Git
+        run: |
+          git config --global core.autocrlf false
+          git config --global user.name "xyz"
+          git config --global user.email "x@y.z"
+      - name: Checkout Commit
+        uses: actions/checkout@v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.2.0
+        with:
+          standalone: true
+      - name: Setup Node
+        run: pnpm env use -g ${{ github.event.inputs.node-version || '22.12.0' }}
+        timeout-minutes: 2
+      - name: Install npm@8
+        run: pnpm add --global npm@8
+        timeout-minutes: 2
+      - name: pnpm install
+        run: pnpm install
+        timeout-minutes: 10
+      - name: Compile + prepare fixtures
+        # Mirrors `pretest`: builds every package's lib/ (the package under test
+        # imports its workspace deps' compiled output) and prepares fixtures.
+        run: pnpm run pretest
+        timeout-minutes: 30
+      - name: Pin localhost to IPv4 (Windows)
+        # The suites that talk to @pnpm/registry-mock reach it at
+        # http://localhost:7700, and the mock binds IPv4 only. The Windows
+        # runner's hosts file leaves `localhost` to the DNS resolver, which
+        # answers ::1 first, so those requests fail with
+        # `ECONNREFUSED ::1:7700`; the Linux runner resolves 127.0.0.1 first and
+        # passes. An explicit hosts entry makes `localhost` mean 127.0.0.1 for
+        # every process in the job. (Setting NODE_OPTIONS
+        # `--dns-result-order=ipv4first` instead was tried and regressed
+        # unrelated suites, because NODE_OPTIONS is inherited by every spawned
+        # pnpm/node child process.)
+        if: runner.os == 'Windows'
+        run: Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "127.0.0.1 localhost"
+        shell: pwsh
+        timeout-minutes: 2
+      - name: Run ${{ matrix.package }} test suite
+        run: pnpm --filter=${{ matrix.package }} run _test
+        timeout-minutes: 30
+        env:
+          PNPM_WORKERS: 3

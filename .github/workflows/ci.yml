@@ -1,6 +1,6 @@
 name: CI
 
-on: [push, pull_request]
+on: workflow_dispatch
 
 permissions:
   contents: read # to fetch code (actions/checkout)
@@ -30,6 +30,7 @@ jobs:
 
     name: ${{matrix.platform}} / Node.js ${{ matrix.node[0] }}
     runs-on: ${{matrix.platform}}
+    timeout-minutes: 90
 
     steps:
     - name: Configure Git

@@ -1,9 +1,6 @@
 name: Release
 
-on:
-  push:
-    tags:
-      - "v*.*.*"
+on: workflow_dispatch
 
 permissions:
   contents: read
@@ -13,6 +10,7 @@ jobs:
     permissions:
       contents: write  # for softprops/action-gh-release to create GitHub release
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     environment: release
     steps:
       - name: Checkout
@@ -36,7 +34,6 @@ jobs:
         # We use --force because we want all artifacts of @reflink/reflink to be installed.
         run: pnpm install --force
       - name: Publish Packages
-        continue-on-error: true
         env:
           # setting the "npm_config_//registry.npmjs.org/:_authToken" env variable directly doesn't work.
           # probably "pnpm release" doesn't pass auth tokens to child processes

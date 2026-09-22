@@ -17,6 +17,7 @@ jobs:
     name: Tagging ${{ github.event.inputs.version }} as ${{ github.event.inputs.tag }}
     environment: release
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
     - name: Setup Node
       uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
@@ -31,6 +32,7 @@ jobs:
 
   publish-to-winget:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: release
     needs: tag-in-registry
     steps:
@@ -43,6 +45,7 @@ jobs:
 
   post-to-reddit:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: release
     needs: tag-in-registry
     steps:
@@ -58,6 +61,7 @@ jobs:
 
   post-to-mastodon:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: release
     needs: tag-in-registry
     steps:
